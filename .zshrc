@@ -2,7 +2,8 @@
 typeset -U path
 path=("$HOME/.local/bin" "$HOME/bin" $path)
 export PATH
-
+#hola
+#
 # Historial
 HISTFILE="$HOME/.zsh_history"
 HISTSIZE=10000

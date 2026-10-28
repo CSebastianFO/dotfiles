@@ -1,0 +1,187 @@
+return {
+	{
+		-- Main LSP Configuration
+		"neovim/nvim-lspconfig",
+		event = { "BufReadPost", "BufNewFile", "BufReadPre" },
+		dependencies = {
+			-- Automatically install LSPs and related tools to stdpath for Neovim
+			-- Mason must be loaded before its dependents so we need to set it up here.
+			-- NOTE: `opts = {}` is the same as calling `require('mason').setup({})`
+			{ "mason-org/mason.nvim", opts = {} },
+			"mason-org/mason-lspconfig.nvim",
+			"WhoIsSethDaniel/mason-tool-installer.nvim",
+
+			-- Must load BEFORE the first LSP client: blink.cmp sets its capabilities on '*' by itself
+			"saghen/blink.cmp",
+		},
+		config = function()
+			vim.api.nvim_create_autocmd("LspAttach", {
+				group = vim.api.nvim_create_augroup("kickstart-lsp-attach", { clear = true }),
+				callback = function(event)
+					-- NOTE: Remember that Lua is a real programming language, and as such it is possible
+					-- to define small helper and utility functions so you don't have to repeat yourself.
+					--
+					local map = function(keys, func, desc, mode)
+						mode = mode or "n"
+						vim.keymap.set(mode, keys, func, { buffer = event.buf, desc = "LSP: " .. desc })
+					end
+
+					map("grn", vim.lsp.buf.rename, "[R]e[n]ame const/var/class(simbol)")
+
+					-- Execute a code action, usually your cursor needs to be on top of an error
+					-- or a suggestion from your LSP for this to activate.
+					map("<leader>ca", vim.lsp.buf.code_action, "[G]oto Code [A]ction", { "n", "x" })
+
+					-- WARN: This is not Goto Definition, this is Goto Declaration.
+					--  For example, in C this would take you to the header.
+					--  is better use just 'gD' in normal mode that provides Snacks
+					-- map("grD", vim.lsp.buf.declaration, "[G]oto [D]eclaration")
+
+					-- Como moverte por el código (cursor sobre la palabra). `gd`, `gr`, `gI`, `gy`, `<leader>ss` y
+					-- `<leader>sS` son tuyos (lua/plugins/snacks.lua) y abren un picker de Snacks; los `gr*` y `gO`
+					-- son nativos de Neovim 0.11 y llenan la lista de quickfix. Volver atrás: <C-t> (o <C-o>).
+					--   gd  ir a la definición (dónde se declaró la variable o función)
+					--   gr  ver las referencias (todos los sitios donde se usa)       | nativo: grr
+					--   gI  ir a la implementación (útil con interfaces o tipos)      | nativo: gri
+					--   gy  ir a la definición del *tipo* de la variable              | nativo: grt
+					--   gD  ir a la declaración (en C, el header)                      | grD, abajo
+					--   <leader>ss  símbolos del archivo     <leader>sS  símbolos del proyecto   | nativo: gO (solo archivo)
+					--   grn renombrar (en todo el proyecto)  <leader>ca  code action (también nativo: gra)
+					-- Ojo: como `gr` es un atajo tuyo y existen `grr`, `grn`, `gra`..., Neovim espera `timeoutlen` tras pulsar `gr`.
+
+					-- This function resolves a difference between neovim nightly (version 0.11) and stable (version 0.10)
+					---@param client vim.lsp.Client
+					---@param method vim.lsp.protocol.Method
+					---@param bufnr? integer some lsp support methods only in specific files
+					---@return boolean
+					local function client_supports_method(client, method, bufnr)
+						if vim.fn.has("nvim-0.11") == 1 then
+							return client:supports_method(method, bufnr)
+						else
+							return client.supports_method(method, { bufnr = bufnr })
+						end
+					end
+
+					if
+						client
+						and client_supports_method(client, vim.lsp.protocol.Methods.textDocument_inlayHint, event.buf)
+					then
+						map("<leader>th", function()
+							vim.lsp.inlay_hint.enable(not vim.lsp.inlay_hint.is_enabled({ bufnr = event.buf }))
+						end, "[T]oggle Inlay [H]ints")
+					end
+				end,
+			})
+
+			-- Diagnostic Config
+			-- See :help vim.diagnostic.Opts
+			vim.diagnostic.config({
+				severity_sort = true,
+				float = { border = "rounded", source = "if_many" },
+				underline = { severity = vim.diagnostic.severity.ERROR },
+				signs = {
+					text = {
+						-- 󰚌
+						[vim.diagnostic.severity.ERROR] = "󰯆",
+						[vim.diagnostic.severity.WARN] = "󰀦",
+						[vim.diagnostic.severity.INFO] = "󰙎",
+						[vim.diagnostic.severity.HINT] = "󰛨",
+					},
+				},
+				virtual_text = {
+					source = "if_many",
+					spacing = 2,
+					format = function(diagnostic)
+						local diagnostic_message = {
+							[vim.diagnostic.severity.ERROR] = diagnostic.message,
+							[vim.diagnostic.severity.WARN] = diagnostic.message,
+							[vim.diagnostic.severity.INFO] = diagnostic.message,
+							[vim.diagnostic.severity.HINT] = diagnostic.message,
+						}
+						return diagnostic_message[diagnostic.severity]
+					end,
+				},
+			})
+
+			-- Everything Mason must install on a fresh machine, in ONE list.
+			-- LSP servers use lspconfig names (mason-lspconfig translates them to Mason packages).
+			-- Names without a translation use the Mason package name (e.g. apex-language-server).
+			require("mason-tool-installer").setup({
+				ensure_installed = {
+					-- LSP servers
+					"lua_ls",
+					"ts_ls",
+					"html",
+					"cssls",
+					"jsonls",
+					"bashls",
+					"clangd",
+					"lemminx",
+					"kotlin_language_server",
+					"yamlls",
+					"eslint", -- lint + "source.fixAll.eslint" on save (replaces eslint_d in nvim-lint)
+					"denols", -- only starts where there is a deno.json (Supabase Edge Functions); ts_ls steps aside there
+					"postgres_lsp", -- Supabase's Postgres LSP: SQL syntax errors in migrations
+					"jdtls", -- started by nvim-jdtls, not by automatic_enable
+					"cspell_ls", -- installed but kept OFF for now (see exclude below)
+
+					-- Salesforce
+					"apex-language-server", -- Apex (enabled by hand below)
+					"lwc_ls", -- Lightning Web Components
+
+					-- Linters
+					"shellcheck",
+					"sqlfluff",
+
+					-- Formatters
+					"prettier",
+					"stylua",
+					"clang-format",
+					"google-java-format",
+					"ktfmt",
+					"xmlformatter",
+					"sql-formatter", -- manual only (<leader>cf): never on save
+
+					-- DAP
+					"java-debug-adapter",
+					"java-test",
+				},
+			})
+
+			if vim.v.vim_did_enter == 1 then
+				require("mason-tool-installer").run_on_start()
+			end
+
+			-- mason-lspconfig has no mapping for apex-language-server, so automatic_enable can't turn it on.
+			vim.lsp.enable({ "apex_ls" })
+
+			require("mason-lspconfig").setup({
+				-- Every installed server gets vim.lsp.enable() automatically, except these:
+				automatic_enable = {
+					exclude = {
+						"cspell_ls", -- TODO: needs configuration; keep it off for now
+						"jdtls", -- nvim-jdtls starts it (plugins/jdtls/)
+					},
+				},
+			})
+		end,
+	},
+
+	{
+		"mason-org/mason.nvim",
+		cmd = "Mason", -- El plugin será cargado tan pronto como el usuario ejecute el comando :Mason en Neovim. (Hasta que no lo haga, no se cargará)
+		build = ":MasonUpdate", -- aseguras que cada vez que ejecutas una actualización de tus plugins de lazy.nvim, el catálogo interno de herramientas de Mason también se actualice automáticamente.
+		opts_extend = { "ensure_installed" }, -- Si algún otro plugin ya esta usando la tabla de opts.ensure_install envés de sobreescribir dicha tabla (Borra la anterior y que este solo la siguiente) va a fusionar las tablas, para que tenga el contenido anterior y este.
+		opts = {
+			ui = {
+				icons = {
+					package_installed = "✓",
+					package_pending = "➜",
+					package_uninstalled = "✗",
+				},
+			},
+		},
+
+		keys = { { "<leader>cm", "<cmd>Mason<cr>", desc = "Mason" } },
+	},
+}

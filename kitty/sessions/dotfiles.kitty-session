@@ -1,0 +1,12 @@
+new_tab MiDotfiles
+  layout tall
+   launch --title "nvim" --cwd ~/dotfiles/ /bin/zsh -i -c 'nvim; zsh'
+    focus
+
+new_tab terminal
+  cd ~/dotfiles/
+    launch  --hold /bin/zsh 
+
+# When you open many session in diferents OS windows, focus the window that it
+# has already open the session and no create another same session in that OS Window. (Duplicate session)
+focus_os_window
